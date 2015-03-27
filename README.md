@@ -7,6 +7,7 @@ UPYUN_BUCKET=your_upyun_bucker
 UPYUN_USERNAME=your_upyun_username
 UPYUN_PASSWORD=your_upyun_password
 STORAGE_PREFX=images
+URL_PREFIX=https://your_domain/images
 ```
 
 ```
@@ -17,6 +18,7 @@ $ ve python run.py
 run with `uwsgi`
 
 ```
+$ ve pip install uwsgi
 $ ve uwsgi --http-socket 0.0.0.0:5000 --wsgi-file server.py --callable app --processes 5 --max-requests 100
 ```
 

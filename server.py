@@ -1,30 +1,20 @@
 # -*- coding: utf-8 -*-
 import imghdr
+import io
 import os
 
 from flask import Flask
 from flask import abort, request, jsonify
+from PIL import Image
 import upyun
 
 
+upyun_bucket   = os.environ.get('UPYUN_BUCKET')   or raise_error('environ')
+upyun_username = os.environ.get('UPYUN_USERNAME') or raise_error('environ')
+upyun_password = os.environ.get('UPYUN_PASSWORD') or raise_error('environ')
+STORAGE_PREFIX = os.environ.get('STORAGE_PREFIX') or 'images'
+URL_PREFIX     = os.environ.get('URL_PREFIX')     or ''
 
-VALID_TYPES = ('png', 'jpeg', 'jpg', 'svg')
-
-def raise_error(msg):
-    raise RuntimeError(msg)
-
-
-upyun_bucket = os.environ.get('UPYUN_BUCKET') or\
-               raise_error('environ')
-
-upyun_username = os.environ.get('UPYUN_USERNAME') or\
-                 raise_error('environ')
-
-upyun_password = os.environ.get('UPYUN_PASSWORD') or\
-                 raise_error('environ')
-
-PREFIX = os.environ.get('STORAGE_PREFIX') or\
-         raise_error('envrion')
 
 app = Flask(__name__)
 
@@ -33,6 +23,12 @@ app.up = upyun.UpYun(upyun_bucket,
                      upyun_password,
                      timeout=30,
                      endpoint=upyun.ED_AUTO)
+
+
+
+def raise_error(msg):
+    raise RuntimeError(msg)
+
 
 #
 # error handlers
@@ -52,6 +48,7 @@ def custom500(error):
     response = jsonify({'message': error.description})
     return response
 
+
 #
 # internal functions
 #
@@ -61,25 +58,35 @@ def _md5(data):
     m.update(data)
     return m.hexdigest()
 
+
 def create():
 
     data = request.stream.read()
     size = len(data)
 
-    if size == 0:
+    if size <= 0:
         abort(403, 'no body')
 
-    ext = str(imghdr.what('', h=data)).lower()
+    ext = str(imghdr.what(None, h=data)).lower()
+    if not ext:
+        abort(403, 'no valid type')
 
-    if ext not in VALID_TYPES:
-        abort(403, 'no valid type: %s' % ext)
+    with Image.open(io.BytesIO(data)) as im:
+        width, height = im.size
 
-    hash = _md5(data)
-    name = "%s.%s" % (hash, ext)
-    filename = '/%s/%s' % (PREFIX, name)
-    rv = {'hash': hash, 'size': size, 'ext': ext, 'url': filename}
+    hashcode = _md5(data)
+    url = '%s/%s.%s' % (URL_PREFIX, hashcode, ext)
+    rv = {
+        'hash': hashcode,
+        'ext': ext,
+        'width': width,
+        'height': height,
+        'size': size,
+        'url': url
+    }
     app.logger.debug(rv)
 
+    filename = '/%s/%s.%s' % (STORAGE_PREFIX, hashcode, ext)
     try:
         app.up.put(filename, data)
         return jsonify(rv)
@@ -87,11 +94,14 @@ def create():
         app.logger.error(e)
         abort(500, 'error when uploading to upyun')
 
+
 def get():
     pass
 
+
 def delete():
     pass
+
 
 #
 # routes
@@ -100,9 +110,11 @@ def delete():
 def items():
     return create()
 
+
 @app.route('/<name>', methods=['GET', 'DELETE'])
 def item(name):
     if request.method == 'GET':
         return get()
     if request.method == 'DELETE':
         return delete()
+    abort(403, 'oops')
