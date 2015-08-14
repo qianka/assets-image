@@ -1,34 +1,26 @@
 # -*- coding: utf-8 -*-
-import imghdr
-import io
-import os
+
+import imghdr, io, time, os, json, base64, hmac, urllib
 
 from flask import Flask
-from flask import abort, request, jsonify
+from flask import render_template, abort, request, jsonify
 from PIL import Image
 import upyun
 
+app = Flask(__name__, instance_relative_config=True)
 
-upyun_bucket   = os.environ.get('UPYUN_BUCKET')   or raise_error('environ')
-upyun_username = os.environ.get('UPYUN_USERNAME') or raise_error('environ')
-upyun_password = os.environ.get('UPYUN_PASSWORD') or raise_error('environ')
-STORAGE_PREFIX = os.environ.get('STORAGE_PREFIX') or 'images'
-URL_PREFIX     = os.environ.get('URL_PREFIX')     or ''
+app.config.from_pyfile('config.py')
 
-
-app = Flask(__name__)
+upyun_bucket = app.config["BUCKET"]
+upyun_username = app.config["USERNAME"]
+upyun_password = app.config["PASSWD"]
+URL_PREFIX = app.config["URL"]
 
 app.up = upyun.UpYun(upyun_bucket,
                      upyun_username,
                      upyun_password,
                      timeout=30,
                      endpoint=upyun.ED_AUTO)
-
-
-
-def raise_error(msg):
-    raise RuntimeError(msg)
-
 
 #
 # error handlers
@@ -48,7 +40,6 @@ def custom500(error):
     response = jsonify({'message': error.description})
     return response
 
-
 #
 # internal functions
 #
@@ -58,10 +49,10 @@ def _md5(data):
     m.update(data)
     return m.hexdigest()
 
+def create(data):
 
-def create():
+    # data = request.stream.read()
 
-    data = request.stream.read()
     size = len(data)
 
     if size <= 0:
@@ -86,11 +77,11 @@ def create():
     }
     app.logger.debug(rv)
 
-    filename = '/%s/%s.%s' % (STORAGE_PREFIX, hashcode, ext)
+    filename = '/%s.%s' % (hashcode, ext)
     try:
         app.up.put(filename, data)
         return jsonify(rv)
-    except Except as e:
+    except Exception as e:
         app.logger.error(e)
         abort(500, 'error when uploading to upyun')
 
@@ -106,15 +97,26 @@ def delete():
 #
 # routes
 #
-@app.route('/', methods=['POST'])
-def items():
-    return create()
+# @app.route('/', methods=['POST'])
+# def items():
+#     # curl -v 'http://127.0.0.1:5000' --data-binary '@/Users/shrimp/Desktop/chrom.png'
+#     return create()
+#
+# @app.route('/<name>', methods=['GET', 'DELETE'])
+# def item(name):
+#     if request.method == 'GET':
+#         return get()
+#     if request.method == 'DELETE':
+#         return delete()
+#     abort(403, 'oops')
 
+@app.route("/")
+def account():
+    return render_template('uploads.html')
 
-@app.route('/<name>', methods=['GET', 'DELETE'])
-def item(name):
-    if request.method == 'GET':
-        return get()
-    if request.method == 'DELETE':
-        return delete()
-    abort(403, 'oops')
+@app.route('/upload', methods=['POST'])
+def upload():
+    file = request.files['mypic']
+    if file:
+        data = file.read()
+        return create(data)
