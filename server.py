@@ -4,9 +4,13 @@ import io
 import os
 
 from flask import Flask
-from flask import abort, request, jsonify
+from flask import abort, request, jsonify, render_template
 from PIL import Image
 import upyun
+
+
+def raise_error(msg):
+    raise RuntimeError(msg)
 
 
 upyun_bucket   = os.environ.get('UPYUN_BUCKET')   or raise_error('environ')
@@ -23,11 +27,6 @@ app.up = upyun.UpYun(upyun_bucket,
                      upyun_password,
                      timeout=30,
                      endpoint=upyun.ED_AUTO)
-
-
-
-def raise_error(msg):
-    raise RuntimeError(msg)
 
 
 #
@@ -59,9 +58,10 @@ def _md5(data):
     return m.hexdigest()
 
 
-def create():
+def create(data=None):
+    if data is None:
+        data = request.stream.read()
 
-    data = request.stream.read()
     size = len(data)
 
     if size <= 0:
@@ -90,16 +90,16 @@ def create():
     try:
         app.up.put(filename, data)
         return jsonify(rv)
-    except Except as e:
+    except Exception as e:
         app.logger.error(e)
         abort(500, 'error when uploading to upyun')
 
 
-def get():
+def get(name):
     pass
 
 
-def delete():
+def delete(name):
     pass
 
 
@@ -114,7 +114,19 @@ def items():
 @app.route('/<name>', methods=['GET', 'DELETE'])
 def item(name):
     if request.method == 'GET':
-        return get()
+        return get(name)
     if request.method == 'DELETE':
-        return delete()
+        return delete(name)
     abort(403, 'oops')
+
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    print(request.method)
+    if request.method == 'GET':
+        return render_template('upload.html')
+
+    file = request.files['mypic']
+    if file:
+        data = file.read()
+        return create(data)
